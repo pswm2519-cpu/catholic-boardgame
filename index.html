@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>갈릴래아로 가는 길</title>
+    <style>
+        :root {
+            --board-size: 800px;
+            --cell-size: calc(var(--board-size) / 10); /* 80px */
+            --pawn-width: 32px;
+            --pawn-height: 42px;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden; /* 전체 스크롤 방지 */
+        }
+
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+
+        .game-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            max-width: 1400px; /* 너비 확장 */
+            height: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* === 왼쪽 패널 (정보 / 달란트판 / 미니게임) === */
+        .left-panel {
+            width: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex-shrink: 0; /* 패널 너비 고정 */
+            height: calc(100% - 40px); /* 패딩 고려 */
+            overflow-y: auto; /* 내용이 길어지면 스크롤 */
+        }
+
+        /* 스크롤바 스타일 (선택사항) */
+        .left-panel::-webkit-scrollbar { width: 6px; }
+        .left-panel::-webkit-scrollbar-thumb { background-color: #ccc; border-radius: 3px; }
+        .left-panel::-webkit-scrollbar-track { background-color: #f0f0f0; }
+
+        .info-card, .talent-board, .minigame-box, .controls-guide {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .info-card h3, .talent-board h3, .minigame-box h3, .controls-guide h3 {
+            margin-top: 0;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            color: #333;
+        }
+
+        /* 현재 선택된 플레이어 정보 */
+        .player-display {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 10px;
+        }
+
+        #currentPlayerImage {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 4px solid #4CAF50;
+            object-fit: cover;
+            background-color: #e0e0e0;
+        }
+
+        #currentPlayerTurn { font-size: 1.2em; }
+        #currentPlayerPos { font-size: 0.9em; color: #555; }
+
+        /* 달란트 현황판 */
+        .talent-board table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .talent-board th, .talent-board td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            position: relative;
+            text-align: center;
+        }
+
+        .talent-board th { background-color: #f2f2f2; }
+
+        .talent-input {
+            width: 80%;
+            padding: 5px;
+            text-align: center;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        /* 순위 뱃지 스타일 */
+        .rank-badge {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background-color: #ff4757;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            padding: 4px 6px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        /* 미니게임 뽑기 */
+        #drawMinigameBtn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2em;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #drawMinigameBtn:hover { background-color: #0056b3; }
+
+        #minigameResult {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #e3f2fd;
+            border: 2px dashed #90caf9;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #1976d2;
+            min-height: 60px;
+        }
+        
+        /* 조작 가이드 */
+        .controls-guide {
+            font-size: 0.9rem;
+            color: #666;
+            line-height: 1.6;
+        }
+        .controls-guide b { color: #000; }
+
+        /* === 오른쪽 패널 래퍼 (맵을 중앙 정렬하기 위함) === */
+        .right-panel-wrapper {
+            flex: 1; /* 남은 공간을 모두 차지 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            min-width: 0; /* flex 아이템이 줄어들 수 있도록 함 */
+        }
+
+        /* === 오른쪽 패널 (메인 맵 보드) === */
+        .board-container {
+            position: relative;
+            width: var(--board-size);
+            height: var(--board-size);
+            /* 이미지 로드 실패 시 Fallback 스타일 */
+            background-color: #fdfaf2;
+            background-image: 
+                linear-gradient(to right, #ccc 1px, transparent 1px),
+                linear-gradient(to bottom, #ccc 1px, transparent 1px),
+                url('맵.png');
+            background-size: var(--cell-size) var(--cell-size), var(--cell-size) var(--cell-size), 100% 100%;
+            background-repeat: repeat, repeat, no-repeat;
+            border: 2px solid #333;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-sizing: border-box; /* 테두리를 크기 안에 포함시켜 잘림 방지 */
+            flex-shrink: 0; /* 맵 크기 고정 */
+            transform: translateX(240px); /* 맵을 오른쪽으로 3칸(240px) 이동 */
+        }
+
+        /* 플레이어 말 (Pawn) */
+        .player {
+            position: absolute;
+            width: var(--pawn-width);
+            height: var(--pawn-height);
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            transition: top 0.2s ease-out, left 0.2s ease-out, transform 0.2s ease-out;
+            cursor: pointer;
+            z-index: 10;
+            filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4));
+            /* 이미지 로드 실패 시 Fallback 스타일 */
+        }
+
+        /* 선택된 말 강조 효과 */
+        .player.selected {
+            transform: scale(1.25);
+            box-shadow: 0 0 15px 5px #ffeb3b; /* 노란색 빛 효과 */
+            z-index: 20;
+        }
+
+        #player1 { background-image: url('성인1.png'); }
+        #player2 { background-image: url('성인2.png'); }
+        #player3 { background-image: url('성인3.png'); }
+        #player4 { background-image: url('성인4.png'); }
+
+        /* 말 이동 점프 애니메이션 */
+        @keyframes bounceJump {
+            0%, 100% { transform: translateY(0) scale(1); filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.4)); }
+            50% { transform: translateY(-20px) scale(1.15); filter: drop-shadow(4px 8px 8px rgba(0,0,0,0.3)); }
+        }
+        .player.jumping {
+            animation: bounceJump 0.4s ease-out;
+        }
+
+
+        /* 이벤트 알림 팝업 */
+        @keyframes sparkle {
+            0%, 100% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1); opacity: 1; }
+        }
+        .event-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            background-color: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 40px 60px;
+            border-radius: 20px;
+            border: 4px solid gold;
+            box-shadow: 0 0 30px 10px rgba(255, 215, 0, 0.7);
+            font-size: 2.8em;
+            font-weight: bold;
+            text-align: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+        .event-popup.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .event-popup::before, .event-popup::after {
+            content: '✨';
+            position: absolute;
+            font-size: 40px;
+            animation: sparkle 1s infinite;
+        }
+        .event-popup::before { top: -20px; left: -20px; animation-delay: 0s; }
+        .event-popup::after { bottom: -20px; right: -20px; animation-delay: 0.5s; }
+
+        /* 미니게임 롤링 팝업 */
+        .minigame-roller-popup {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        .minigame-roller-popup.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        #minigameRollerText {
+            font-size: 4em;
+            color: white;
+            font-weight: bold;
+            text-shadow: 0 0 10px #ffdd57, 0 0 20px #ffdd57;
+            padding: 20px 40px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px;
+        }
+
+        /* 최종 순위 발표 팝업 */
+        .award-ceremony-popup {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        .award-ceremony-popup.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .award-content {
+            width: 90%;
+            max-width: 600px;
+            text-align: center;
+        }
+        .award-title {
+            font-size: 3em;
+            color: #ffd700;
+            text-shadow: 0 0 15px #ffd700;
+            margin-bottom: 40px;
+        }
+        .rank-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .rank-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 15px 20px;
+            margin-bottom: 15px;
+            font-size: 2em;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+        .rank-item.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .rank-item .name { font-weight: bold; }
+        .rank-item .talent { color: #ffdd57; }
+        .rank-item .rank-emoji { font-size: 1.2em; margin-right: 15px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- 왼쪽 패널 -->
+        <div class="left-panel">
+            <div class="info-card">
+                <h3>현재 플레이어</h3>
+                <div class="player-display">
+                    <img id="currentPlayerImage" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="선택된 플레이어">
+                    <div>
+                        <h4 id="currentPlayerTurn">말을 선택하세요</h4>
+                        <p id="currentPlayerPos">위치: -</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="talent-board">
+                <h3>🪙 달란트 현황판</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">플레이어</th>
+                            <th>달란트</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>요한</td>
+                            <td id="talent-cell-1"><input type="number" class="talent-input" id="talent-input-1" value="10" min="0" onchange="updateTalent(1, this.value)"></td>
+                        </tr>
+                        <tr>
+                            <td>야고보</td>
+                            <td id="talent-cell-2"><input type="number" class="talent-input" id="talent-input-2" value="10" min="0" onchange="updateTalent(2, this.value)"></td>
+                        </tr>
+                        <tr>
+                            <td>시몬</td>
+                            <td id="talent-cell-3"><input type="number" class="talent-input" id="talent-input-3" value="10" min="0" onchange="updateTalent(3, this.value)"></td>
+                        </tr>
+                        <tr>
+                            <td>안드레아</td>
+                            <td id="talent-cell-4"><input type="number" class="talent-input" id="talent-input-4" value="10" min="0" onchange="updateTalent(4, this.value)"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="minigame-box">
+                <h3>🎮 랜덤 미니게임</h3>
+                <button id="drawMinigameBtn">게임 뽑기</button>
+                <div id="minigameResult"></div>
+            </div>
+            
+            <div class="controls-guide">
+                <h3>📌 조작 방법</h3>
+                1. 맵 위의 <b>말을 마우스로 클릭</b>하여 선택합니다.<br>
+                2. 키보드 <b>방향키(←,→,↑,↓)</b>로 이동합니다.<br>
+                3. <b>Enter</b>를 눌러 칸 이벤트를 확인합니다.<br>
+                4. <b>Spacebar</b>를 눌러 다음 플레이어로 턴을 넘깁니다.
+            </div>
+        </div>
+
+        <!-- 오른쪽 패널 래퍼 -->
+        <div class="right-panel-wrapper">
+            <!-- 오른쪽 메인 보드판 -->
+            <div class="board-container" id="board">
+                <div id="player1" class="player"></div>
+                <div id="player2" class="player"></div>
+                <div id="player3" class="player"></div>
+                <div id="player4" class="player"></div>
+            </div>
+        </div>
+
+        <!-- 이벤트 알림 팝업 -->
+        <div id="eventPopup" class="event-popup"></div>
+
+        <!-- 미니게임 롤링 팝업 -->
+        <div id="minigameRollerPopup" class="minigame-roller-popup">
+            <div id="minigameRollerText"></div>
+        </div>
+
+        <!-- 최종 순위 발표 팝업 -->
+        <div id="awardCeremonyPopup" class="award-ceremony-popup">
+            <div class="award-content">
+                <h2 class="award-title">✨ 최종 등수를 발표하겠습니다! ✨</h2>
+                <ul id="rankList" class="rank-list"></ul>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 전역 스코프에 달란트 업데이트 함수 노출
+        window.updateTalent = (playerId, value) => {
+            const inputEl = document.getElementById(`talent-input-${playerId}`);
+            inputEl.value = Math.max(0, parseInt(value) || 0); // 음수 또는 NaN(Not a Number) 방지
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const gridSize = 10;
+            const cellSize = 80; // 800px / 10
+            const pawnWidth = 32;
+            const pawnHeight = 42;
+
+            // 칸 내부 여백을 고려한 오프셋 계산
+            const offsetX1 = (cellSize / 4) - (pawnWidth / 2); // 좌측 (25%)
+            const offsetX2 = (cellSize * 3 / 4) - (pawnWidth / 2); // 우측 (75%)
+            const offsetY1 = (cellSize / 4) - (pawnHeight / 2); // 상단 (25%)
+            const offsetY2 = (cellSize * 3 / 4) - (pawnHeight / 2); // 하단 (75%)
+
+            const players = [
+                { id: 1, name: '요한', element: document.getElementById('player1'), col: 0, row: 0, image: '성인1.png', offset: { x: offsetX1, y: offsetY1 }, isSkipping: false, rank: 0 },
+                { id: 2, name: '야고보', element: document.getElementById('player2'), col: 0, row: 0, image: '성인2.png', offset: { x: offsetX1, y: offsetY2 }, isSkipping: false, rank: 0 },
+                { id: 3, name: '시몬', element: document.getElementById('player3'), col: 0, row: 0, image: '성인3.png', offset: { x: offsetX2, y: offsetY1 }, isSkipping: false, rank: 0 },
+                { id: 4, name: '안드레아', element: document.getElementById('player4'), col: 0, row: 0, image: '성인4.png', offset: { x: offsetX2, y: offsetY2 }, isSkipping: false, rank: 0 }
+            ];
+
+            let currentPlayerIndex = 0;
+            let selectedPlayer = null;
+            let isPopupVisible = false;
+            let popupType = null; // 'event', 'win', 'award'
+            let nextRank = 1;
+            let tileEvents = [];
+
+            // 미니게임 목록
+            const allMinigames = [
+                "뒤돌아서 가위바위보 하나빼기", "병뚜껑 날리기", "주사위 던져 높은 숫자 나오기",
+                "초 맞추기 게임", "복음서 맞추기 게임", "이구동성 게임",
+                "물병던지기 게임", "탁구공 넣기 게임", "제기 차기",
+                "방석 징검다리", "종이비행기 멀리 날리기", "빼빼로 칼싸움",
+                "컵을 당겨라", "책 넘겨서 사람 많이 나오기 게임", "도블 보드게임",
+                "구슬잡기 게임", "해적 룰렛 게임", "악어 게임", "펭귄 얼음깨기 게임", "메모리게임"
+            ];
+            let shuffledMinigames = [];
+
+            // Web Audio API 설정
+            let audioContext;
+            let isAudioUnlocked = false;
+            let rollIntervalId = null;
+
+            function unlockAudioContext() {
+                if (isAudioUnlocked) return;
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                isAudioUnlocked = true;
+                console.log("Audio Context is active.");
+            }
+
+            // Web Audio API로 효과음 생성
+            const sounds = {
+                move: () => {
+                    if (!audioContext) return;
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.type = 'triangle';
+                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.2);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.2);
+                },
+                roll: () => {
+                    if (!audioContext || rollIntervalId) return;
+                    const playTick = () => {
+                        const oscillator = audioContext.createOscillator();
+                        const gainNode = audioContext.createGain();
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        oscillator.type = 'square';
+                        oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
+                        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.05);
+                        oscillator.start(audioContext.currentTime);
+                        oscillator.stop(audioContext.currentTime + 0.05);
+                    };
+                    rollIntervalId = setInterval(playTick, 60);
+                },
+                stopRoll: () => {
+                    if (rollIntervalId) {
+                        clearInterval(rollIntervalId);
+                        rollIntervalId = null;
+                    }
+                },
+                fanfare: () => {
+                    if (!audioContext) return;
+                    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+                    notes.forEach((note, i) => {
+                        const oscillator = audioContext.createOscillator();
+                        const gainNode = audioContext.createGain();
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(note, audioContext.currentTime + i * 0.15);
+                        gainNode.gain.setValueAtTime(0.4, audioContext.currentTime + i * 0.15);
+                        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + i * 0.15 + 0.2);
+                        oscillator.start(audioContext.currentTime + i * 0.15);
+                        oscillator.stop(audioContext.currentTime + i * 0.15 + 0.2);
+                    });
+                },
+                win: () => {
+                    if (!audioContext) return;
+                    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                    notes.forEach((note, i) => {
+                        const oscillator = audioContext.createOscillator();
+                        const gainNode = audioContext.createGain();
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        oscillator.type = 'triangle';
+                        oscillator.frequency.setValueAtTime(note, audioContext.currentTime + i * 0.1);
+                        gainNode.gain.setValueAtTime(0.5, audioContext.currentTime + i * 0.1);
+                        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + i * 0.1 + 0.4);
+                        oscillator.start(audioContext.currentTime + i * 0.1);
+                        oscillator.stop(audioContext.currentTime + i * 0.1 + 0.4);
+                    });
+                },
+                rankReveal: () => {
+                    if (!audioContext) return;
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+                    gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.15);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.15);
+                }
+            };
+            
+            // 미니게임 목록을 섞는 함수 (Fisher-Yates Shuffle)
+            function shuffleMinigames() {
+                shuffledMinigames = [...allMinigames];
+                for (let i = shuffledMinigames.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [shuffledMinigames[i], shuffledMinigames[j]] = [shuffledMinigames[j], shuffledMinigames[i]];
+                }
+            }
+
+            const teacherNames = ["최다빈 선생님", "정의석 학사님", "조윤정 선생님", "김규리 선생님"];
+            const battleMissions = [
+                "✊✌️✋ 묵찌빠 대결",
+                "🛡️ 1대1 방향 막기 대결",
+                "💪 팔씨름 대결",
+                "🐔 닭싸움 대결",
+                "👀 눈싸움 대결",
+                "🎲 주사위 높이 나오기 대결",
+                "🃏 카드 뽑아 높은 숫자 나오기 대결"
+            ];
+
+            function initializeTileEvents() {
+                tileEvents = [];
+                for (let i = 0; i < 100; i++) {
+                    const rand = Math.random();
+                    if (rand < 0.10) { // 10% 확률: 평화로운 칸
+                        tileEvents.push({ type: 'peace', message: '🕊️<br>아무 일도 일어나지 않았습니다.' });
+                    } else if (rand < 0.40) { // 30% 확률: 선생님 대결
+                        const teacher = teacherNames[Math.floor(Math.random() * teacherNames.length)];
+                        const mission = battleMissions[Math.floor(Math.random() * battleMissions.length)];
+                        const message = `⚔️ [${teacher}]과의<br>${mission}!<br><small style="font-size: 0.5em;">승리 시 +2, 패배 시 -1</small>`;
+                        tileEvents.push({ type: 'battle', message: message });
+                    } else if (rand < 0.70) { // 30% 확률: 달란트 증감
+                        const value = Math.floor(Math.random() * 3) + 1; // 1, 2, 3
+                        const sign = Math.random() < 0.5 ? 1 : -1;
+                        const message = `🪙<br>달란트 ${sign > 0 ? '+' : ''}${value * sign}개!`;
+                        tileEvents.push({ type: 'talent', value: value * sign, message });
+                    } else if (rand < 0.90) { // 20% 확률: 칸 이동
+                        const value = Math.floor(Math.random() * 2) + 2; // 2, 3
+                        const sign = Math.random() < 0.5 ? 1 : -1;
+                        const message = `🏃<br>${sign > 0 ? '앞으로' : '뒤로'} ${value}칸 이동!`;
+                        tileEvents.push({ type: 'move', value: value * sign, message });
+                    } else { // 10% 확률: 한 턴 쉬기
+                        tileEvents.push({ type: 'skip', message: '⏸️<br>한 턴 쉬기!' });
+                    }
+                }
+                // 시작과 끝 칸은 평화롭게 (1번 칸, 100번 칸)
+                tileEvents[0] = { type: 'peace', message: '🕊️<br>출발! 여정이 시작됩니다.' };
+                tileEvents[99] = { type: 'peace', message: '🎉<br>도착! 수고하셨습니다!' };
+            }
+
+            function showEventPopup(message) {
+                const popup = document.getElementById('eventPopup');
+                popup.innerHTML = message;
+                sounds.fanfare();
+                popup.classList.add('show');
+                isPopupVisible = true;
+                popupType = 'event';
+            }
+
+            function updateAllPlayerPositions() {
+                players.forEach(p => {
+                    const posX = (p.col * cellSize) + p.offset.x;
+                    const posY = (p.row * cellSize) + p.offset.y;
+                    p.element.style.left = `${posX}px`;
+                    p.element.style.top = `${posY}px`;
+                });
+                if (selectedPlayer) {
+                    updatePlayerInfoPanel(selectedPlayer);
+                }
+            }
+
+            function selectPlayer(playerToSelect) {
+                if (selectedPlayer) {
+                    selectedPlayer.element.classList.remove('selected');
+                }
+                selectedPlayer = playerToSelect;
+                if (selectedPlayer) {
+                    selectedPlayer.element.classList.add('selected');
+                    updatePlayerInfoPanel(selectedPlayer);
+                }
+            }
+
+            function updatePlayerInfoPanel(player) {
+                document.getElementById('currentPlayerImage').src = player.image;
+                document.getElementById('currentPlayerTurn').textContent = `${player.name} 조작 중`;
+                
+                const cellNum = getCellNumber(player) + 1;
+                
+                // 화면에 표시되는 좌표는 1부터 시작하도록 +1
+                const displayCol = player.col + 1;
+                const displayRow = player.row + 1;
+                
+                document.getElementById('currentPlayerPos').textContent = `위치: ${cellNum}번 칸 (좌표: ${displayCol}, ${displayRow})`;
+            }
+
+            function getCellNumber(player) {
+                const row = player.row;
+                let col = player.col;
+                if (row % 2 !== 0) { // 홀수 행 (1, 3, ...): 오른쪽 -> 왼쪽
+                    col = 9 - player.col;
+                }
+                return row * 10 + col; // 0-99 index
+            }
+
+            function setPlayerPositionByCellNumber(player, cellIndex) {
+                cellIndex = Math.max(0, Math.min(99, cellIndex)); // 0-99 범위 유지
+                const row = Math.floor(cellIndex / 10);
+                let col = cellIndex % 10;
+
+                player.row = row;
+                if (row % 2 !== 0) { // 홀수 행
+                    player.col = 9 - col;
+                } else { // 짝수 행
+                    player.col = col;
+                }
+            }
+
+            function executeEvent(player) {
+                const cellIndex = getCellNumber(player);
+                const event = tileEvents[cellIndex];
+
+                showEventPopup(event.message);
+
+                switch (event.type) {
+                    case 'talent':
+                        const talentInput = document.getElementById(`talent-input-${player.id}`);
+                        const currentTalent = parseInt(talentInput.value);
+                        talentInput.value = Math.max(0, currentTalent + event.value);
+                        break;
+                    case 'move':
+                        const newCellIndex = cellIndex + event.value;
+                        setPlayerPositionByCellNumber(player, newCellIndex);
+                        setTimeout(updateAllPlayerPositions, 100); // 시각적 이동을 위해 약간의 딜레이
+                        break;
+                    case 'skip':
+                        player.isSkipping = true;
+                        break;
+                    case 'battle':
+                    case 'peace':
+                    default:
+                        // 아무것도 안 함 (대결은 오프라인으로 진행 후 수동 조작)
+                        break;
+                }
+            }
+
+            function checkWinCondition(player) {
+                const cellNum = getCellNumber(player);
+                if (cellNum === 99 && player.rank === 0) { // 100번째 칸 (인덱스 99)
+                    player.rank = nextRank;
+                    const talentInput = document.getElementById(`talent-input-${player.id}`);
+                    talentInput.value = parseInt(talentInput.value) + 10;
+                    
+                    const rankBadge = document.createElement('div');
+                    rankBadge.className = 'rank-badge';
+                    const rankEmojis = ['🥇', '🥈', '🥉', ''];
+                    rankBadge.textContent = `${rankEmojis[nextRank-1] || ''}${nextRank}등`;
+                    document.getElementById(`talent-cell-${player.id}`).appendChild(rankBadge);
+                    
+                    const popup = document.getElementById('eventPopup');
+                    popup.innerHTML = `🎉 ${player.name} ${nextRank}등 도착! 🎉<br><small>달란트 +10개!</small>`;
+                    sounds.win();
+                    popup.classList.add('show');
+                    isPopupVisible = true;
+                    popupType = 'win';
+
+                    nextRank++;
+                }
+            }
+
+            let revealedRankCount = 0;
+            function startAwardCeremony() {
+                const awardPopup = document.getElementById('awardCeremonyPopup');
+                const rankListEl = document.getElementById('rankList');
+                
+                // 모든 플레이어의 최종 달란트를 가져와 순위 매기기
+                const finalRanks = players.map(p => ({
+                    ...p,
+                    talent: parseInt(document.getElementById(`talent-input-${p.id}`).value)
+                })).sort((a, b) => b.talent - a.talent);
+
+                rankListEl.innerHTML = ''; // 리스트 초기화
+                finalRanks.forEach((player, index) => {
+                    const rank = index + 1;
+                    const rankEmojis = ['🥇', '🥈', '🥉', '🎖️'];
+                    const emoji = rankEmojis[rank-1] || '🎖️';
+                    const li = document.createElement('li');
+                    li.className = 'rank-item';
+                    li.id = `rank-item-${rank}`;
+                    li.innerHTML = `
+                        <div><span class="rank-emoji">${emoji}</span><span class="name">${rank}등: ${player.name}</span></div>
+                        <span class="talent">${player.talent} 달란트</span>
+                    `;
+                    rankListEl.appendChild(li);
+                });
+
+                awardPopup.classList.add('show');
+                isPopupVisible = true;
+                popupType = 'award';
+                revealedRankCount = 0;
+            }
+
+            function revealNextRank() {
+                if (revealedRankCount >= players.length) {
+                    // 모든 순위 발표 후, 팝업 닫기 또는 리셋 버튼 표시 등
+                    return;
+                }
+                revealedRankCount++;
+                const rankItem = document.getElementById(`rank-item-${revealedRankCount}`);
+                if (rankItem) {
+                    rankItem.classList.add('show');
+                    sounds.rankReveal();
+                }
+            }
+
+            document.addEventListener('keydown', (e) => {
+                unlockAudioContext(); // 첫 키 입력 시 오디오 활성화
+
+                // 팝업이 떠 있을 때는 Enter로 닫는 것 외에 모든 동작을 막음
+                if (isPopupVisible) {
+                    if (e.code === 'Enter') {
+                        e.preventDefault();
+                        if (popupType === 'win') {
+                            document.getElementById('eventPopup').classList.remove('show');
+                            isPopupVisible = false;
+                            startAwardCeremony();
+                        } else if (popupType === 'award') {
+                            revealNextRank();
+                        } else { // 'event' 팝업
+                            document.getElementById('eventPopup').classList.remove('show');
+                            isPopupVisible = false;
+                        }
+                    }
+                    return;
+                }
+
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    let nextPlayerFound = false;
+                    let count = 0;
+                    while(!nextPlayerFound && count < players.length * 2) {
+                        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                        if (players[currentPlayerIndex].isSkipping) {
+                            showEventPopup(`⏸️<br>${players[currentPlayerIndex].name} 한 턴 쉬기!`);
+                            players[currentPlayerIndex].isSkipping = false; // 스킵 상태 해제
+                        } else {
+                            nextPlayerFound = true;
+                        }
+                        count++;
+                    }
+                    selectPlayer(players[currentPlayerIndex]);
+                    return;
+                }
+
+                if (e.code === 'Enter' && selectedPlayer) {
+                    e.preventDefault();
+                    executeEvent(selectedPlayer);
+                    return;
+                }
+
+                if (!selectedPlayer) return;
+
+                let moved = false;
+                if (e.code === 'ArrowRight' && selectedPlayer.col < gridSize - 1) {
+                    selectedPlayer.col++;
+                    moved = true;
+                } else if (e.code === 'ArrowLeft' && selectedPlayer.col > 0) {
+                    selectedPlayer.col--;
+                    moved = true;
+                } else if (e.code === 'ArrowUp' && selectedPlayer.row > 0) {
+                    selectedPlayer.row--;
+                    moved = true;
+                } else if (e.code === 'ArrowDown' && selectedPlayer.row < gridSize - 1) {
+                    selectedPlayer.row++;
+                    moved = true;
+                }
+
+                if (moved) {
+                    sounds.move();
+                    // 점프 애니메이션 적용
+                    selectedPlayer.element.classList.add('jumping');
+                    setTimeout(() => {
+                        selectedPlayer.element.classList.remove('jumping');
+                    }, 400); // 애니메이션 시간과 동일하게
+                    checkWinCondition(selectedPlayer);
+                    updateAllPlayerPositions();
+                }
+            });
+
+            players.forEach(player => {
+                player.element.addEventListener('click', (e) => {
+                    unlockAudioContext(); // 첫 클릭 시 오디오 활성화
+                    e.stopPropagation();
+                    selectPlayer(player);
+                });
+            });
+
+            document.getElementById('drawMinigameBtn').addEventListener('click', () => {
+                const resultEl = document.getElementById('minigameResult');
+                unlockAudioContext(); // 버튼 클릭 시 오디오 활성화
+                const rollerPopup = document.getElementById('minigameRollerPopup');
+                const rollerText = document.getElementById('minigameRollerText');
+
+                // 모든 플레이어 달란트 2개씩 차감
+                players.forEach(p => {
+                    const talentInput = document.getElementById(`talent-input-${p.id}`);
+                    talentInput.value = Math.max(0, parseInt(talentInput.value) - 2);
+                });
+
+                // 섞인 게임 목록이 비었으면 자동으로 다시 섞음
+                if (shuffledMinigames.length === 0) {
+                    shuffleMinigames();
+                }
+                const selectedGame = shuffledMinigames.pop();
+
+                rollerPopup.classList.add('show');
+                sounds.roll();
+
+                let rollCount = 0;
+                const maxRolls = 30;
+                const rollInterval = setInterval(() => {
+                    rollerText.textContent = allMinigames[Math.floor(Math.random() * allMinigames.length)];
+                    rollCount++;
+                    if (rollCount > maxRolls) {
+                        clearInterval(rollInterval);
+                        sounds.stopRoll();
+                        
+                        rollerText.textContent = selectedGame;
+                        rollerText.style.transform = 'scale(1.2)';
+                        rollerText.style.transition = 'transform 0.2s ease-out';
+                        
+                        sounds.fanfare();
+
+                        setTimeout(() => {
+                            rollerPopup.classList.remove('show');
+                            rollerText.style.transform = 'scale(1)';
+                            resultEl.textContent = selectedGame;
+                        }, 2000);
+                    }
+                }, 100);
+            });
+
+            // 초기화
+            shuffleMinigames(); // 게임 시작 시 미니게임 목록을 처음 섞음
+            initializeTileEvents();
+            updateAllPlayerPositions();
+            selectPlayer(players[0]); // 게임 시작 시 1P 자동 선택
+        });
+    </script>
+</body>
+</html>
