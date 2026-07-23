@@ -761,22 +761,33 @@
                 const awardPopup = document.getElementById('awardCeremonyPopup');
                 const rankListEl = document.getElementById('rankList');
                 
-                // 모든 플레이어의 최종 달란트를 가져와 순위 매기기
-                const finalRanks = players.map(p => ({
+                // 모든 플레이어의 최종 달란트를 가져와 정렬
+                const sortedPlayers = players.map(p => ({
                     ...p,
                     talent: parseInt(document.getElementById(`talent-input-${p.id}`).value)
                 })).sort((a, b) => b.talent - a.talent);
 
+                // 동점자 처리하여 순위 부여
+                const finalRanks = [];
+                let currentRank = 0;
+                let lastTalent = -1;
+                sortedPlayers.forEach((player, index) => {
+                    if (player.talent !== lastTalent) {
+                        currentRank = index + 1;
+                    }
+                    finalRanks.push({ ...player, finalRank: currentRank });
+                    lastTalent = player.talent;
+                });
+
                 rankListEl.innerHTML = ''; // 리스트 초기화
                 finalRanks.forEach((player, index) => {
-                    const rank = index + 1;
                     const rankEmojis = ['🥇', '🥈', '🥉', '🎖️'];
-                    const emoji = rankEmojis[rank-1] || '🎖️';
+                    const emoji = rankEmojis[player.finalRank - 1] || '🎖️';
                     const li = document.createElement('li');
                     li.className = 'rank-item';
-                    li.id = `rank-item-${rank}`;
+                    li.id = `rank-item-${index + 1}`; // DOM ID는 순차적으로 유지
                     li.innerHTML = `
-                        <div><span class="rank-emoji">${emoji}</span><span class="name">${rank}등: ${player.name}</span></div>
+                        <div><span class="rank-emoji">${emoji}</span><span class="name">${player.finalRank}등: ${player.name}</span></div>
                         <span class="talent">${player.talent} 달란트</span>
                     `;
                     rankListEl.appendChild(li);
